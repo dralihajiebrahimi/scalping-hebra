@@ -43,11 +43,6 @@ from tradingview_ta import TA_Handler, Interval
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-API_KEY = os.getenv("KUCOIN_API_KEY", "67c9d31345e41a0001676a6f")
-API_SECRET = os.getenv("KUCOIN_API_SECRET", "7b93d018-c606-40db-b8d0-b4bee166eef1")
-API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE", "8529118#Ahe")
-analyzer = SentimentIntensityAnalyzer()
-
 def prepare_headers():
     """Generate random User-Agent headers."""
     ua = UserAgent(software_names=[SoftwareName.CHROME.value, SoftwareName.FIREFOX.value],

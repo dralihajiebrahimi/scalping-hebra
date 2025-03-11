@@ -14,9 +14,11 @@ import subprocess
 from trade import init_kucoin_client, select_top_5_pumping_coins, get_current_price, get_market_condition
 from database import init_db_connection, log_trade, log_order, update_trade
 from strategies import bullish_scalping, bearish_short_scalping, mean_reversion_trading
-
+from kavenegar import KavenegarAPI, APIException, HTTPException
+from datetime import datetime
+from pytz import timezone
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
+TEHRAN_TZ = timezone('Asia/Tehran')
 app = Flask(__name__)
 
 # Global Variables
@@ -26,6 +28,34 @@ subscribed_symbols = set()
 ws = None
 id_to_symbol = {}
 top_5_symbols = []
+
+API_KEY = os.getenv("KUCOIN_API_KEY", "67c9d31345e41a0001676a6f")
+API_SECRET = os.getenv("KUCOIN_API_SECRET", "7b93d018-c606-40db-b8d0-b4bee166eef1")
+API_PASSPHRASE = os.getenv("KUCOIN_API_PASSPHRASE", "8529118#Ahe")
+SMS_API_KEY = os.getenv("SMS_API_KEY", "6D5461396F694E753267644269584B6956736F4155486A6E4E3665545A753352424E765959686D6C34773D")
+SMS_RECEPTOR = os.getenv("SMS_RECEPTOR", "09022920101")
+SMS_TEMPLATE = os.getenv("SMS_TEMPLATE", "defacto-buysell")
+
+def send_sms_otp(quantity: str, coin: str, side: str) -> None:
+    try:
+        rnd = random.randint(1000, 2000)
+        now = datetime.now(TEHRAN_TZ).strftime("%H:%M:%S")
+        api = KavenegarAPI(SMS_API_KEY)
+        params = {
+            'receptor': SMS_RECEPTOR,
+            'template': SMS_TEMPLATE,
+            'token': quantity,
+            'token2': coin,
+            'token3': side,
+            'token10': now,
+            'token20': rnd,
+            'type': 'sms'
+        }
+        response = api.verify_lookup(params)
+        logging.info(f"SMS sent successfully: {response}")
+    except (APIException, HTTPException) as e:
+        logging.error(f"Error sending SMS: {e}")
+
 
 # WebSocket Functions
 def get_websocket_token():
@@ -179,16 +209,19 @@ def calculate_min_cash_required(exchange, symbol):
         return float('inf')
 
 def execute_trade(exchange, conn, symbol, amount, ordertype, strategy):
-    """Execute trade via strategy functions (simplified)."""
     try:
         if ordertype == "buy":
-            bullish_scalping(exchange, conn, symbol, amount)
+            bullish_scalping(exchange, conn, symbol, investment_amount=amount)
+            send_sms_otp(str(amount), symbol.split('/')[0], "buy")
         elif ordertype == "sell":
-            bearish_short_scalping(exchange, conn, symbol, amount)
+            bearish_short_scalping(exchange, conn, symbol, investment_amount=amount)
+            send_sms_otp(str(amount), symbol.split('/')[0], "sell")
         elif ordertype == "side":
-            mean_reversion_trading(exchange, conn, symbol, amount)
+            mean_reversion_trading(exchange, conn, symbol, investment_amount=amount)
+            send_sms_otp(str(amount), symbol.split('/')[0], "side")
     except Exception as e:
         logging.error(f"Error executing trade for {symbol}: {e}")
+
 
 def execute_trading_strategy(exchange, conn, symbol, market_condition):
     """Execute trading strategy with enhanced logging."""
@@ -276,6 +309,32 @@ def maintain_active_trading(exchange, conn):
         except Exception as e:
             logging.error(f"Trading loop error: {e}")
             time.sleep(60)
+
+def save_trading_record(data: dict) -> None:
+    query = """
+    INSERT INTO trading_ontime
+    (qid, entrying_price, leverage, target_stop_pct, target_profit_pct, order_type,
+     opentime, xgbooti, take_profit, stop_loss, symbolku, position_info, type_of_exit,
+     closetime, pnl, pxl, stop_loss_prices, take_profit_prices, current_price, orders_ids, contract_size)
+    VALUES
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (
+                data.get("qid"), data.get("entrying_price"), data.get("leverage"),
+                data.get("target_stop_pct"), data.get("target_profit_pct"), data.get("order_type"),
+                data.get("opentime"), json.dumps(data.get("xgbooti")), data.get("take_profit"),
+                data.get("stop_loss"), data.get("symbolku"), json.dumps(data.get("position_info")),
+                data.get("type_of_exit"), data.get("closetime"), data.get("pnl"), data.get("pxl"),
+                data.get("stop_loss_prices"), data.get("take_profit_prices"), data.get("current_price"),
+                data.get("orders_ids"), data.get("contract_size")
+            ))
+            conn.commit()
+            logging.info(f"Trade record saved with ID: {cursor.lastrowid}")
+    except Error as e:
+        logging.error(f"Error saving trade record: {e}")
+
 
 @app.route('/')
 def index():
