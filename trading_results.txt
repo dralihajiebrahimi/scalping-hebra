@@ -1,0 +1,2 @@
+# Make trading_results globally accessible so your Flask app can display them
+[None, None]

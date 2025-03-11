@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 1200px; }
+        h1, h2, h3 { color: #343a40; }
+        .table th, .table td { text-align: center; }
+        .table thead th { background-color: #343a40; color: white; }
+        .table-striped tbody tr:nth-of-type(odd) { background-color: #e9ecef; }
+        .pnl-positive { color: green; }
+        .pnl-negative { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Trading Bot Dashboard</h1>
+        
+        <!-- Daily PNL -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h3>Daily PNL: <span id="daily_pnl">$0.00</span></h3>
+            </div>
+        </div>
+        
+        <!-- Open Trades -->
+        <h2 class="mt-4">Open Trades</h2>
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered" id="open_trades_table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Entry Price</th>
+                        <th>Quantity</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Closed Trades -->
+        <h2 class="mt-4">Closed Trades</h2>
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered" id="closed_trades_table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Entry Price</th>
+                        <th>Exit Price</th>
+                        <th>Quantity</th>
+                        <th>PNL</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Additional Metrics -->
+        <div class="row mt-4">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>Total Trades: <span id="total_trades">0</span></h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>Win Rate: <span id="win_rate">0%</span></h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>Average PNL: <span id="average_pnl">$0.00</span></h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Manual Refresh Button -->
+        <div class="text-center mt-4">
+            <button class="btn btn-primary" onclick="fetchTradeData()">Refresh Data</button>
+        </div>
+    </div>
+
+    <!-- JavaScript for periodic updates -->
+    <script>
+        function fetchTradeData() {
+            fetch('/api/trade_data')
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    updateDashboard(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching trade data:', error);
+                });
+        }
+
+        function updateDashboard(data) {
+            // Update Daily PNL
+            const dailyPnlElement = document.getElementById('daily_pnl');
+            dailyPnlElement.textContent = `$${data.daily_pnl.toFixed(2)}`;
+            dailyPnlElement.className = data.daily_pnl > 0 ? 'pnl-positive' : 'pnl-negative';
+
+            // Update Open Trades Table
+            const openTradesBody = document.querySelector('#open_trades_table tbody');
+            openTradesBody.innerHTML = '';
+            if (data.open_trades.length > 0) {
+                data.open_trades.forEach(trade => {
+                    const row = `<tr>
+                        <td>${trade.symbol}</td>
+                        <td>$${trade.entry_price.toFixed(2)}</td>
+                        <td>${trade.quantity.toFixed(6)}</td>
+                        <td>${trade.status}</td>
+                    </tr>`;
+                    openTradesBody.innerHTML += row;
+                });
+            } else {
+                openTradesBody.innerHTML = '<tr><td colspan="4" class="text-center">No open trades</td></tr>';
+            }
+
+            // Update Closed Trades Table
+            const closedTradesBody = document.querySelector('#closed_trades_table tbody');
+            closedTradesBody.innerHTML = '';
+            if (data.closed_trades.length > 0) {
+                data.closed_trades.forEach(trade => {
+                    const pnlClass = trade.profit_loss > 0 ? 'pnl-positive' : 'pnl-negative';
+                    const row = `<tr>
+                        <td>${trade.symbol}</td>
+                        <td>$${trade.entry_price.toFixed(2)}</td>
+                        <td>$${trade.exit_price ? trade.exit_price.toFixed(2) : 'N/A'}</td>
+                        <td>${trade.quantity.toFixed(6)}</td>
+                        <td class="${pnlClass}">$${trade.profit_loss ? trade.profit_loss.toFixed(2) : 'N/A'}</td>
+                        <td>${trade.status}</td>
+                    </tr>`;
+                    closedTradesBody.innerHTML += row;
+                });
+            } else {
+                closedTradesBody.innerHTML = '<tr><td colspan="6" class="text-center">No closed trades</td></tr>';
+            }
+
+            // Update Additional Metrics
+            document.getElementById('total_trades').textContent = data.total_trades;
+            document.getElementById('win_rate').textContent = data.win_rate.toFixed(2) + '%';
+            document.getElementById('average_pnl').textContent = `$${data.average_pnl.toFixed(2)}`;
+        }
+
+        // Fetch data every 10 seconds
+        setInterval(fetchTradeData, 10000);
+
+        // Initial fetch on page load
+        fetchTradeData();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
